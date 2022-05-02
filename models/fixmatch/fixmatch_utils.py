@@ -41,4 +41,4 @@ def consistency_loss(logits_s, logits_w, name='ce', T=1.0, p_cutoff=0.0, use_har
 
     else:
         assert Exception('Not Implemented consistency_loss')
-            
+

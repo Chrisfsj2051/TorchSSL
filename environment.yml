@@ -33,7 +33,7 @@ dependencies:
   - pillow=8.1.2=py37he98fc37_0
   - pip=20.3.3=py37h06a4308_0
   - python=3.7.10=hdb3f193_0
-  - pytorch=1.7.1=py3.7_cuda10.2.89_cudnn7.6.5_0
+#  - pytorch=1.7.1=py3.7_cuda10.2.89_cudnn7.6.5_0
   - readline=8.1=h27cfd23_0
   - setuptools=52.0.0=py37h06a4308_0
   - six=1.15.0=py37h06a4308_0
