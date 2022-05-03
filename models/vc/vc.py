@@ -1,14 +1,16 @@
-import pickle
-
+import numpy as np
 import torch
 
 import torch.nn.functional as F
+from sklearn.metrics import accuracy_score, top_k_accuracy_score, precision_score, recall_score, f1_score, \
+    roc_auc_score, confusion_matrix
 from torch.cuda import current_device
 from torch.cuda.amp import autocast, GradScaler
 from collections import Counter
 import os
 import contextlib
 
+from helpers import expected_calibration_error, maximum_calibration_error, average_calibration_error
 from models.fixmatch.fixmatch import FixMatch
 from .vc_utils import consistency_loss, consistency_loss_prob
 from train_utils import ce_loss, EMA
@@ -37,6 +39,61 @@ class VC(FixMatch):
         if args.resume == True:
             eval_dict = self.evaluate(args=args)
             print(eval_dict)
+
+    @torch.no_grad()
+    def evaluate(self, eval_loader=None, args=None):
+        self.model.eval()
+        self.ema.apply_shadow()
+        if eval_loader is None:
+            eval_loader = self.loader_dict['eval']
+        total_loss = 0.0
+        total_num = 0.0
+        y_true = []
+        y_pred = []
+        y_logits = []
+        y_logits_vc = []
+        for _, x, y in eval_loader:
+            x, y = x.cuda(args.gpu), y.cuda(args.gpu)
+            num_batch = x.shape[0]
+            total_num += num_batch
+            logits = self.model(x)
+            loss = F.cross_entropy(logits, y, reduction='mean')
+            y_true.extend(y.cpu().tolist())
+            y_pred.extend(torch.max(logits, dim=-1)[1].cpu().tolist())
+            _, _, _, _, pseudo_labels_onehot = self.model(x, test_mode=False)
+            y_logits_vc.extend(pseudo_labels_onehot.cpu().tolist())
+            y_logits.extend(torch.softmax(logits, dim=-1).cpu().tolist())
+            total_loss += loss.detach() * num_batch
+
+        top1 = accuracy_score(y_true, y_pred)
+        top5 = top_k_accuracy_score(y_true, y_logits, k=5)
+        precision = precision_score(y_true, y_pred, average='macro')
+        recall = recall_score(y_true, y_pred, average='macro')
+        F1 = f1_score(y_true, y_pred, average='macro')
+        AUC = roc_auc_score(y_true, y_logits, multi_class='ovo')
+
+        confs_vc = torch.FloatTensor([max(x) for x in y_logits_vc])
+        confs = torch.FloatTensor([max(x) for x in y_logits])
+        ece_vc = expected_calibration_error(
+            confs_vc, torch.LongTensor(y_pred), torch.LongTensor(y_true)).item()
+        mce_vc = maximum_calibration_error(
+            confs_vc, torch.LongTensor(y_pred), torch.LongTensor(y_true)).item()
+        ace_vc = average_calibration_error(
+            confs_vc, torch.LongTensor(y_pred), torch.LongTensor(y_true)).item()
+        ece = expected_calibration_error(
+            confs, torch.LongTensor(y_pred), torch.LongTensor(y_true)).item()
+        mce = maximum_calibration_error(
+            confs, torch.LongTensor(y_pred), torch.LongTensor(y_true)).item()
+        ace = average_calibration_error(
+            confs, torch.LongTensor(y_pred), torch.LongTensor(y_true)).item()
+        cf_mat = confusion_matrix(y_true, y_pred, normalize='true')
+        self.print_fn('confusion matrix:\n' + np.array_str(cf_mat))
+        self.ema.restore()
+        self.model.train()
+        return {'eval/loss': total_loss / total_num, 'eval/top-1-acc': top1, 'eval/top-5-acc': top5,
+                'eval/precision': precision, 'eval/recall': recall, 'eval/F1': F1, 'eval/AUC': AUC,
+                'ece': ece, 'mce': mce, 'ace': ace, 'ece_vc': ece_vc, 'mce_vc': mce_vc,
+                'ace_vc': ace_vc}
 
     def train(self, args, logger=None):
         ngpus_per_node = torch.cuda.device_count()

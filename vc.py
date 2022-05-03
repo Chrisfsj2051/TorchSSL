@@ -145,6 +145,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                                 num_warmup_steps=args.num_train_iter * 0)
     ## set SGD and cosine lr on FixMatch
     model.set_optimizer(optimizer, scheduler)
+    model.model.version = args.version
 
     # SET Devices for (Distributed) DataParallel
     if not torch.cuda.is_available():
