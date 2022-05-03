@@ -65,7 +65,6 @@ class WideResNetVariationCalibration(WideResNet):
         out = out.view(-1, self.channels)
         logits = self.fc(out)
 
-
         if test_mode:
             return logits
         pseudo_labels = logits.max(1)[1].detach()

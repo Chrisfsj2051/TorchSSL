@@ -169,6 +169,7 @@ def main_worker(gpu, ngpus_per_node, args):
             # if arg.gpu is None, DDP will divide and allocate batch_size
             # to all available GPUs if device_ids are not set.
             model.cuda()
+            model.model = nn.SyncBatchNorm.convert_sync_batchnorm(model.model)
             model = torch.nn.parallel.DistributedDataParallel(model)
 
     elif args.gpu is not None:
