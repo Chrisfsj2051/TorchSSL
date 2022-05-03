@@ -1,24 +1,18 @@
 import pickle
 
 import torch
-import numpy as np
-import pandas as pd
 
-import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.models as models
+from torch.cuda import current_device
 from torch.cuda.amp import autocast, GradScaler
 from collections import Counter
 import os
 import contextlib
 
 from models.fixmatch.fixmatch import FixMatch
-from train_utils import AverageMeter
-from helpers import expected_calibration_error, average_calibration_error, maximum_calibration_error
-from .vc_utils import consistency_loss, Get_Scalar, consistency_loss_prob
-from train_utils import ce_loss, wd_loss, EMA, Bn_Controller
+from .vc_utils import consistency_loss, consistency_loss_prob
+from train_utils import ce_loss, EMA
 
-from sklearn.metrics import *
 from copy import deepcopy
 
 
@@ -210,7 +204,8 @@ class VC(FixMatch):
         # return eval_dict
 
     def load_model(self, load_path):
-        checkpoint = torch.load(load_path)
+        checkpoint = torch.load(load_path,
+                                map_location=lambda storage, loc: storage.cuda(current_device()))
         self.scheduler.load_state_dict(checkpoint['scheduler'])
         self.it = checkpoint['it']
         try:
