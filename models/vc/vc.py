@@ -180,9 +180,10 @@ class VC(FixMatch):
                         use_softmax=use_softmax
                     )
 
-                variation_loss = cali_loss_weight * (F.mse_loss(recon_r_ulb_s, uncertainty_ulb_s) * select).mean()
-                kl_loss = cali_loss_weight * (-0.5 * torch.mean(1 + logvar_ulb_s - mu_ulb_s.pow(2) - logvar_ulb_s.exp()))
-
+                variation_loss = F.mse_loss(recon_r_ulb_s, uncertainty_ulb_s) * select
+                kl_loss = -0.5 * torch.sum(1 + logvar_ulb_s - mu_ulb_s ** 2 - logvar_ulb_s.exp(), dim=1) * select
+                variation_loss = cali_loss_weight * variation_loss.mean()
+                kl_loss = cali_loss_weight * kl_loss.mean()
                 total_loss = sup_loss + self.lambda_u * unsup_loss + variation_loss + kl_loss
 
             # parameter updates
