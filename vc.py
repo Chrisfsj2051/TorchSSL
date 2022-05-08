@@ -124,6 +124,7 @@ def main_worker(gpu, ngpus_per_node, args):
     model = VC(args.version,
                args.prob_warmup_iters,
                args.cali_warmup_iters,
+               args.vc_loss_weight,
                _net_builder,
                args.num_classes,
                args.ema_m,
@@ -301,6 +302,7 @@ if __name__ == "__main__":
     parser.add_argument('--version', type=int, default=0)
     parser.add_argument('--prob_warmup_iters', type=int, default=100000)
     parser.add_argument('--cali_warmup_iters', type=int, default=150000)
+    parser.add_argument('--vc_loss_weight', type=float, default=0.0)
 
     '''
     Optimizer configurations

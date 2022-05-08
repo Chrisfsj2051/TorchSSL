@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import torch
 
@@ -12,19 +14,21 @@ import contextlib
 
 from helpers import expected_calibration_error, maximum_calibration_error, average_calibration_error
 from models.fixmatch.fixmatch import FixMatch
+from models.flexmatch.flexmatch import FlexMatch
 from .vc_utils import consistency_loss, consistency_loss_prob
 from train_utils import ce_loss, EMA
 
 from copy import deepcopy
 
 
-class VC(FixMatch):
+class VC(FlexMatch):
 
-    def __init__(self, version, prob_warmup_iters, cali_warmup_iters, *args, **kwargs):
+    def __init__(self, version, prob_warmup_iters, cali_warmup_iters, vc_loss_weight, *args, **kwargs):
         super(VC, self).__init__(*args, **kwargs)
         self.version = version
         self.prob_warmup_iters = prob_warmup_iters
         self.cali_warmup_iters = cali_warmup_iters
+        self.vc_loss_weight = vc_loss_weight
 
     def before_train(self, args):
         self.model.train()
@@ -39,6 +43,18 @@ class VC(FixMatch):
         if args.resume == True:
             eval_dict = self.evaluate(args=args)
             print(eval_dict)
+
+        dist_file_name = r"./data_statistics/" + args.dataset + '_' + str(args.num_labels) + '.json'
+        if args.dataset.upper() == 'IMAGENET':
+            p_target = None
+        else:
+            with open(dist_file_name, 'r') as f:
+                p_target = json.loads(f.read())
+                p_target = torch.tensor(p_target['distribution'])
+                p_target = p_target.cuda(args.gpu)
+
+        self.p_model = None
+        self.p_target = p_target
 
     @torch.no_grad()
     def evaluate(self, eval_loader=None, args=None):
@@ -132,6 +148,7 @@ class VC(FixMatch):
             assert num_ulb == x_ulb_s.shape[0]
 
             x_lb, x_ulb_w, x_ulb_s = x_lb.cuda(args.gpu), x_ulb_w.cuda(args.gpu), x_ulb_s.cuda(args.gpu)
+            x_ulb_idx = x_ulb_idx.cuda(args.gpu)
             y_lb = y_lb.cuda(args.gpu)
 
             pseudo_counter = Counter(selected_label.tolist())
@@ -159,14 +176,20 @@ class VC(FixMatch):
                 p_cutoff = self.p_fn(self.it)
                 cali_loss_weight = 0.0
                 if self.prob_warmup_iters > 0:
-                    unsup_loss, mask, select, pseudo_lb = consistency_loss(
-                        logits_x_ulb_s, logits_x_ulb_w,
-                        'ce', T, p_cutoff, use_hard_labels=args.hard_label)
+                    unsup_loss, mask, select, pseudo_lb, self.p_model = consistency_loss(
+                        logits_x_ulb_s,
+                        logits_x_ulb_w,
+                        classwise_acc,
+                        self.p_target,
+                        self.p_model,
+                        'ce', T, p_cutoff,
+                        use_hard_labels=args.hard_label,
+                        use_DA=False)
                     self.prob_warmup_iters -= 1
                     self.cali_warmup_iters -= 1
                     assert self.cali_warmup_iters > self.prob_warmup_iters
                 else:
-                    cali_loss_weight = 5.0
+                    cali_loss_weight = self.vc_loss_weight
                     if self.cali_warmup_iters > 0:
                         use_softmax = True
                         logits_x_ulb_w_ = logits_x_ulb_w
@@ -179,6 +202,9 @@ class VC(FixMatch):
                         'ce', T, p_cutoff, use_hard_labels=args.hard_label,
                         use_softmax=use_softmax
                     )
+
+                if x_ulb_idx[select == 1].nelement() != 0:
+                    selected_label[x_ulb_idx[select == 1]] = pseudo_lb[select == 1]
 
                 variation_loss = F.mse_loss(recon_r_ulb_s, uncertainty_ulb_s) * select
                 kl_loss = -0.5 * torch.sum(1 + logvar_ulb_s - mu_ulb_s ** 2 - logvar_ulb_s.exp(), dim=1) * select

@@ -81,17 +81,15 @@ class WideResNetVariationCalibration(WideResNet):
         z = self.reparameterise(mu, logvar)
         recon_r = self.decoder(torch.cat([logits, z], 1))
 
-        h = torch.randn(x.shape[0], self.z_dim * 2).to(x.device)
-        sample_mu, sample_logvar = h.chunk(2, dim=1)
-        z = self.reparameterise(sample_mu, sample_logvar)
-        if self.version == 1:
-            decode_input = torch.cat([logits.detach(), z], 1)
-        else:
+        with torch.no_grad():
+            h = torch.randn(x.shape[0], self.z_dim * 2).to(x.device)
+            sample_mu, sample_logvar = h.chunk(2, dim=1)
+            z = self.reparameterise(sample_mu, sample_logvar)
             decode_input = torch.cat([logits, z], 1)
-        cali_output = self.decoder(decode_input)
-        batch_idx = torch.LongTensor(list(range(x.shape[0]))).to(x.device)
-        pseudo_labels_onehot = pseudo_labels_onehot.type_as(cali_output)
-        pseudo_labels_onehot[batch_idx, pseudo_labels[batch_idx]] = cali_output.squeeze()
+            cali_output = self.decoder(decode_input)
+            batch_idx = torch.LongTensor(list(range(x.shape[0]))).to(x.device)
+            pseudo_labels_onehot = pseudo_labels_onehot.type_as(cali_output)
+            pseudo_labels_onehot[batch_idx, pseudo_labels[batch_idx]] = cali_output.squeeze()
 
         return logits, recon_r, cali_gt_label, (mu, logvar), pseudo_labels_onehot
 
