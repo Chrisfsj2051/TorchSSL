@@ -12,6 +12,8 @@ from collections import Counter
 import os
 import contextlib
 
+from tqdm import tqdm
+
 from helpers import expected_calibration_error, maximum_calibration_error, average_calibration_error
 from models.fixmatch.fixmatch import FixMatch
 from models.flexmatch.flexmatch import FlexMatch
@@ -41,7 +43,11 @@ class VC(FlexMatch):
         self.best_eval_acc, self.best_it = 0.0, 0
         # eval for once to verify if the checkpoint is loaded correctly
         if args.resume == True:
+            print('Start evaluate on eval data')
             eval_dict = self.evaluate(args=args)
+            print(eval_dict)
+            print('Start evaluate on ulb data')
+            eval_dict = self.evaluate(eval_loader=self.loader_dict['eval_ulb'], args=args, is_pseudo_test=True)
             print(eval_dict)
 
         dist_file_name = r"./data_statistics/" + args.dataset + '_' + str(args.num_labels) + '.json'
@@ -57,7 +63,7 @@ class VC(FlexMatch):
         self.p_target = p_target
 
     @torch.no_grad()
-    def evaluate(self, eval_loader=None, args=None):
+    def evaluate(self, eval_loader=None, args=None, is_pseudo_test=False):
         self.model.eval()
         self.ema.apply_shadow()
         if eval_loader is None:
@@ -68,7 +74,11 @@ class VC(FlexMatch):
         y_pred = []
         y_logits = []
         y_logits_vc = []
-        for _, x, y in eval_loader:
+        for pair in eval_loader:
+            if not is_pseudo_test:
+                _, x, y = pair
+            else:
+                _, x, _, y = pair
             x, y = x.cuda(args.gpu), y.cuda(args.gpu)
             num_batch = x.shape[0]
             total_num += num_batch
@@ -132,8 +142,8 @@ class VC(FlexMatch):
         selected_label = selected_label.cuda(args.gpu)
 
         classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
-        for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s) in zip(self.loader_dict['train_lb'],
-                                                                  self.loader_dict['train_ulb']):
+        for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s, _) in zip(
+                self.loader_dict['train_lb'], self.loader_dict['train_ulb']):
 
             # prevent the training iterations exceed args.num_train_iter
             if self.it > args.num_train_iter * args.epoch:
@@ -253,7 +263,12 @@ class VC(FlexMatch):
                     self.save_model(f'iter_{self.it}.pth', save_path)
 
             if self.it % self.num_eval_iter == 0:
+                print('Start evaluate on ulb data')
+                eval_dict = self.evaluate(eval_loader=self.loader_dict['eval_ulb'], args=args, is_pseudo_test=True)
+                print(eval_dict)
+                print('Start evaluate on eval data')
                 eval_dict = self.evaluate(args=args)
+                print(eval_dict)
                 tb_dict.update(eval_dict)
 
                 save_path = os.path.join(args.save_dir, args.save_name)
@@ -283,9 +298,6 @@ class VC(FlexMatch):
                 self.num_eval_iter = 1000
 
         return
-        # eval_dict = self.evaluate(args=args)
-        # eval_dict.update({'eval/best_acc': self.best_eval_acc, 'eval/best_it': self.best_it})
-        # return eval_dict
 
     def load_model(self, load_path):
         checkpoint = torch.load(load_path,

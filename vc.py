@@ -3,6 +3,7 @@ import os
 import logging
 import random
 import warnings
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -193,11 +194,11 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # Construct Dataset & DataLoader
     if args.dataset != "imagenet":
-        train_dset = SSL_Dataset(args, alg='fixmatch', name=args.dataset, train=True,
+        train_dset = SSL_Dataset(args, alg='vc', name=args.dataset, train=True,
                                  num_classes=args.num_classes, data_dir=args.data_dir)
         lb_dset, ulb_dset = train_dset.get_ssl_dset(args.num_labels)
 
-        _eval_dset = SSL_Dataset(args, alg='fixmatch', name=args.dataset, train=False,
+        _eval_dset = SSL_Dataset(args, alg='vc', name=args.dataset, train=False,
                                  num_classes=args.num_classes, data_dir=args.data_dir)
         eval_dset = _eval_dset.get_dset()
     else:
@@ -230,6 +231,11 @@ def main_worker(gpu, ngpus_per_node, args):
                                           args.eval_batch_size,
                                           num_workers=args.num_workers,
                                           drop_last=False)
+
+    loader_dict['eval_ulb'] = get_data_loader(deepcopy(dset_dict['train_ulb']),
+                                              args.eval_batch_size,
+                                              num_workers=args.num_workers,
+                                              drop_last=False)
 
     ## set DataLoader on FixMatch
     model.set_data_loader(loader_dict)
