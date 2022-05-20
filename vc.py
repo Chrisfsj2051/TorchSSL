@@ -123,9 +123,10 @@ def main_worker(gpu, ngpus_per_node, args):
                                    )
 
     model = VC(args.version,
-               args.prob_warmup_iters,
-               args.cali_warmup_iters,
-               args.vc_loss_weight,
+               args.pseudo_alg,
+               args.pseudo_alg_warmup_iter,
+               args.cali_train_warmup_iter,
+               args.cali_loss_weight,
                _net_builder,
                args.num_classes,
                args.ema_m,
@@ -155,23 +156,24 @@ def main_worker(gpu, ngpus_per_node, args):
     elif args.distributed:
         if args.gpu is not None:
             torch.cuda.set_device(args.gpu)
-
             '''
             batch_size: batch_size per node -> batch_size per gpu
             workers: workers per node -> workers per gpu
             '''
             args.batch_size = int(args.batch_size / ngpus_per_node)
-            model.model.cuda(args.gpu)
             model.model = nn.SyncBatchNorm.convert_sync_batchnorm(model.model)
-            model.model = torch.nn.parallel.DistributedDataParallel(model.model,
-                                                                    device_ids=[args.gpu],
-                                                                    broadcast_buffers=False,
-                                                                    find_unused_parameters=True)
+            model.model.cuda(args.gpu)
+            model.model = torch.nn.parallel.DistributedDataParallel(
+                model.model,
+                device_ids=[args.gpu],
+                broadcast_buffers=False,
+                find_unused_parameters=True)
 
         else:
             # if arg.gpu is None, DDP will divide and allocate batch_size
             # to all available GPUs if device_ids are not set.
-            model.cuda()
+            # model.cuda()
+            assert False
             model.model = nn.SyncBatchNorm.convert_sync_batchnorm(model.model)
             model = torch.nn.parallel.DistributedDataParallel(model)
 
@@ -306,9 +308,10 @@ if __name__ == "__main__":
     parser.add_argument('--ema_m', type=float, default=0.999, help='ema momentum for eval_model')
     parser.add_argument('--ulb_loss_ratio', type=float, default=1.0)
     parser.add_argument('--version', type=int, default=0)
-    parser.add_argument('--prob_warmup_iters', type=int, default=100000)
-    parser.add_argument('--cali_warmup_iters', type=int, default=150000)
-    parser.add_argument('--vc_loss_weight', type=float, default=0.0)
+    parser.add_argument('--pseudo_alg', type=str, default='flexmatch')
+    parser.add_argument('--pseudo_alg_warmup_iter', type=int, default=15000000000)
+    parser.add_argument('--cali_train_warmup_iter', type=int, default=15000000000)
+    parser.add_argument('--cali_loss_weight', type=float, default=0.0)
 
     '''
     Optimizer configurations

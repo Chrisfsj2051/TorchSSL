@@ -5,7 +5,7 @@ import torch
 
 import torch.nn.functional as F
 from sklearn.metrics import accuracy_score, top_k_accuracy_score, precision_score, recall_score, f1_score, \
-    roc_auc_score, confusion_matrix
+    roc_auc_score, confusion_matrix, classification_report
 from torch.cuda import current_device
 from torch.cuda.amp import autocast, GradScaler
 from collections import Counter
@@ -15,7 +15,6 @@ import contextlib
 from tqdm import tqdm
 
 from helpers import expected_calibration_error, maximum_calibration_error, average_calibration_error
-from models.fixmatch.fixmatch import FixMatch
 from models.flexmatch.flexmatch import FlexMatch
 from .vc_utils import consistency_loss, consistency_loss_prob
 from train_utils import ce_loss, EMA
@@ -25,12 +24,30 @@ from copy import deepcopy
 
 class VC(FlexMatch):
 
-    def __init__(self, version, prob_warmup_iters, cali_warmup_iters, vc_loss_weight, *args, **kwargs):
+    def __init__(self,
+                 version,
+                 pseudo_alg,
+                 pseudo_alg_warmup_iter,
+                 cali_train_warmup_iter,
+                 cali_loss_weight,
+                 *args, **kwargs):
         super(VC, self).__init__(*args, **kwargs)
         self.version = version
-        self.prob_warmup_iters = prob_warmup_iters
-        self.cali_warmup_iters = cali_warmup_iters
-        self.vc_loss_weight = vc_loss_weight
+        self.pseudo_alg_warmup_iter = pseudo_alg_warmup_iter
+        self.cali_train_warmup_iter = cali_train_warmup_iter
+        self.cali_loss_weight = cali_loss_weight
+        self.pseudo_alg = pseudo_alg
+
+    def choose_pseudo_alg(self):
+        if self.pseudo_alg_warmup_iter > 0:
+            self.pseudo_alg_warmup_iter -= 1
+            return consistency_loss
+        elif self.pseudo_alg == 'flexmatch':
+            return consistency_loss
+        elif self.pseudo_alg == 'probabilitic':
+            return consistency_loss_prob
+        else:
+            return NotImplementedError
 
     def before_train(self, args):
         self.model.train()
@@ -43,12 +60,16 @@ class VC(FlexMatch):
         self.best_eval_acc, self.best_it = 0.0, 0
         # eval for once to verify if the checkpoint is loaded correctly
         if args.resume == True:
-            print('Start evaluate on eval data')
-            eval_dict = self.evaluate(args=args)
-            print(eval_dict)
-            print('Start evaluate on ulb data')
-            eval_dict = self.evaluate(eval_loader=self.loader_dict['eval_ulb'], args=args, is_pseudo_test=True)
-            print(eval_dict)
+            eval_dict, _ = self.evaluate(args=args)
+            self.print_fn(
+                f"{self.it} iteration, USE_EMA: {self.ema_m != 0}, "
+                f"{eval_dict}, at {self.best_it} iters")
+            ulb_eval_dict, cls_report = self.evaluate(
+                eval_loader=self.loader_dict['eval_ulb'], args=args, is_pseudo_test=True)
+            self.print_fn(
+                f"[ULB EVAL] {self.it} iteration, USE_EMA: {self.ema_m != 0}, "
+                f"{ulb_eval_dict}, at {self.best_it} iters")
+            self.print_fn(f"[ULB EVAL]:\n{cls_report}")
 
         dist_file_name = r"./data_statistics/" + args.dataset + '_' + str(args.num_labels) + '.json'
         if args.dataset.upper() == 'IMAGENET':
@@ -82,12 +103,11 @@ class VC(FlexMatch):
             x, y = x.cuda(args.gpu), y.cuda(args.gpu)
             num_batch = x.shape[0]
             total_num += num_batch
-            logits = self.model(x)
+            logits, _, _, _, pseudo_labels_onehot = self.model(x)
             loss = F.cross_entropy(logits, y, reduction='mean')
             y_true.extend(y.cpu().tolist())
             y_pred.extend(torch.max(logits, dim=-1)[1].cpu().tolist())
-            _, _, _, _, pseudo_labels_onehot = self.model(x, test_mode=False)
-            y_logits_vc.extend(pseudo_labels_onehot.cpu().tolist())
+            y_logits_vc.extend(pseudo_labels_onehot.softmax(dim=-1).cpu().tolist())
             y_logits.extend(torch.softmax(logits, dim=-1).cpu().tolist())
             total_loss += loss.detach() * num_batch
 
@@ -97,7 +117,7 @@ class VC(FlexMatch):
         recall = recall_score(y_true, y_pred, average='macro')
         F1 = f1_score(y_true, y_pred, average='macro')
         AUC = roc_auc_score(y_true, y_logits, multi_class='ovo')
-
+        cls_report = classification_report(y_true, y_pred)
         confs_vc = torch.FloatTensor([max(x) for x in y_logits_vc])
         confs = torch.FloatTensor([max(x) for x in y_logits])
         ece_vc = expected_calibration_error(
@@ -119,7 +139,7 @@ class VC(FlexMatch):
         return {'eval/loss': total_loss / total_num, 'eval/top-1-acc': top1, 'eval/top-5-acc': top5,
                 'eval/precision': precision, 'eval/recall': recall, 'eval/F1': F1, 'eval/AUC': AUC,
                 'ece': ece, 'mce': mce, 'ace': ace, 'ece_vc': ece_vc, 'mce_vc': mce_vc,
-                'ace_vc': ace_vc}
+                'ace_vc': ace_vc}, cls_report
 
     def train(self, args, logger=None):
         ngpus_per_node = torch.cuda.device_count()
@@ -144,7 +164,6 @@ class VC(FlexMatch):
         classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
         for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s, _) in zip(
                 self.loader_dict['train_lb'], self.loader_dict['train_ulb']):
-
             # prevent the training iterations exceed args.num_train_iter
             if self.it > args.num_train_iter * args.epoch:
                 break
@@ -184,39 +203,27 @@ class VC(FlexMatch):
                 # hyper-params for update
                 T = self.t_fn(self.it)
                 p_cutoff = self.p_fn(self.it)
-                cali_loss_weight = 0.0
-                if self.prob_warmup_iters > 0:
-                    unsup_loss, mask, select, pseudo_lb, self.p_model = consistency_loss(
-                        logits_x_ulb_s,
-                        logits_x_ulb_w,
-                        classwise_acc,
-                        self.p_target,
-                        self.p_model,
-                        'ce', T, p_cutoff,
-                        use_hard_labels=args.hard_label,
-                        use_DA=False)
-                    self.prob_warmup_iters -= 1
-                    self.cali_warmup_iters -= 1
-                    assert self.cali_warmup_iters > self.prob_warmup_iters
+                if self.cali_train_warmup_iter > 0:
+                    cali_loss_weight = 0
+                    self.cali_train_warmup_iter -= 1
                 else:
-                    cali_loss_weight = self.vc_loss_weight
-                    if self.cali_warmup_iters > 0:
-                        use_softmax = True
-                        logits_x_ulb_w_ = logits_x_ulb_w
-                        self.cali_warmup_iters -= 1
-                    else:
-                        logits_x_ulb_w_ = cali_score_ulb_w
-                        use_softmax = False
-                    unsup_loss, mask, select, pseudo_lb = consistency_loss_prob(
-                        logits_x_ulb_s, logits_x_ulb_w_,
-                        'ce', T, p_cutoff, use_hard_labels=args.hard_label,
-                        use_softmax=use_softmax
-                    )
+                    cali_loss_weight = self.cali_loss_weight
+                    
+                unsup_loss, mask, select, pseudo_lb, self.p_model = self.choose_pseudo_alg()(
+                    logits_x_ulb_s,
+                    logits_x_ulb_w,
+                    classwise_acc,
+                    self.p_target,
+                    self.p_model,
+                    'ce', T, p_cutoff,
+                    use_hard_labels=args.hard_label,
+                    use_DA=False
+                )
 
                 if x_ulb_idx[select == 1].nelement() != 0:
                     selected_label[x_ulb_idx[select == 1]] = pseudo_lb[select == 1]
 
-                variation_loss = F.mse_loss(recon_r_ulb_s, uncertainty_ulb_s) * select
+                variation_loss = F.mse_loss(recon_r_ulb_s.softmax(1), uncertainty_ulb_s) * select
                 kl_loss = -0.5 * torch.sum(1 + logvar_ulb_s - mu_ulb_s ** 2 - logvar_ulb_s.exp(), dim=1) * select
                 variation_loss = cali_loss_weight * variation_loss.mean()
                 kl_loss = cali_loss_weight * kl_loss.mean()
@@ -255,22 +262,24 @@ class VC(FlexMatch):
             tb_dict['train/run_time'] = start_run.elapsed_time(end_run) / 1000.
 
             # Save model for each 10K steps and best model for each 1K steps
-            if self.it % 10000 == 0:
+            if self.it % 25000 == 0:
                 save_path = os.path.join(args.save_dir, args.save_name)
                 if not args.multiprocessing_distributed or \
                         (args.multiprocessing_distributed and args.rank % ngpus_per_node == 0):
                     self.save_model('latest_model.pth', save_path)
                     self.save_model(f'iter_{self.it}.pth', save_path)
 
-            if self.it % self.num_eval_iter == 0:
-                print('Start evaluate on ulb data')
-                eval_dict = self.evaluate(eval_loader=self.loader_dict['eval_ulb'], args=args, is_pseudo_test=True)
-                print(eval_dict)
-                print('Start evaluate on eval data')
-                eval_dict = self.evaluate(args=args)
-                print(eval_dict)
-                tb_dict.update(eval_dict)
+            if self.it % (self.num_eval_iter * 2) == 0:
+                ulb_eval_dict, cls_report = self.evaluate(
+                    eval_loader=self.loader_dict['eval_ulb'], args=args, is_pseudo_test=True)
+                self.print_fn(
+                    f"[ULB EVAL] {self.it} iteration, USE_EMA: {self.ema_m != 0}, "
+                    f"{ulb_eval_dict}, at {self.best_it} iters")
+                self.print_fn(f"[ULB EVAL]:\n{cls_report}")
 
+            if self.it % self.num_eval_iter == 0:
+                eval_dict, _ = self.evaluate(args=args)
+                tb_dict.update(eval_dict)
                 save_path = os.path.join(args.save_dir, args.save_name)
 
                 if tb_dict['eval/top-1-acc'] > self.best_eval_acc:

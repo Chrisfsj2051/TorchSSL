@@ -52,13 +52,11 @@ def consistency_loss(logits_s, logits_w, class_acc, p_target, p_model, name='ce'
         assert Exception('Not Implemented consistency_loss')
 
 
-def consistency_loss_prob(logits_s, logits_w, name='ce', T=1.0, p_cutoff=0.0, use_hard_labels=True, use_softmax=True):
+def consistency_loss_prob(logits_s, logits_w, class_acc, p_target, p_model, name='ce',
+                     T=1.0, p_cutoff=0.0, use_hard_labels=True, use_DA=False):
     assert name in ['ce']
     logits_w = logits_w.detach()
-    if use_softmax:
-        pseudo_label = torch.softmax(logits_w, dim=-1)
-    else:
-        pseudo_label = logits_w
+    pseudo_label = torch.softmax(logits_w, dim=-1)
     max_probs, max_idx = torch.max(pseudo_label, dim=-1)
     select = torch.bernoulli(max_probs).long()
     mask = select.float()
@@ -70,4 +68,4 @@ def consistency_loss_prob(logits_s, logits_w, name='ce', T=1.0, p_cutoff=0.0, us
     else:
         pseudo_label = torch.softmax(logits_w / T, dim=-1)
         masked_loss = ce_loss(logits_s, pseudo_label, use_hard_labels) * mask
-    return masked_loss.mean(), mask.mean(), select, max_idx.long()
+    return masked_loss.mean(), mask.mean(), select, max_idx.long(), p_model

@@ -12,18 +12,18 @@ class WideResNetVariationCalibration(WideResNet):
         self.z_dim = z_dim
         # p(r|c,z): self.decoder
         self.decoder = nn.Sequential(
-            nn.Linear(num_classes + z_dim, 128),
+            nn.Linear(num_classes + self.channels + z_dim, 256),
             nn.ReLU(),
-            nn.Linear(128, 64),
+            nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(64, 1),
+            nn.Linear(128, self.num_classes),
             nn.Sigmoid()
         )
         # p(z|c,r)
         self.encoder = nn.Sequential(
-            nn.Linear(num_classes * 2 + 1, 64),
+            nn.Linear(num_classes + num_classes + self.channels, 128),
             nn.ReLU(),
-            nn.Linear(64, 256),
+            nn.Linear(128, 256),
             nn.ReLU(),
             nn.Linear(256, 2 * z_dim)
         )
@@ -44,18 +44,19 @@ class WideResNetVariationCalibration(WideResNet):
     def test_forward(self, x):
         return super(WideResNetVariationCalibration, self).forward(x)
 
-    def calc_uncertainty(self, x, gt_label):
-        pred_list = []
-        self.sampling_times = 10
+    def calc_uncertainty(self, x):
+        self.sampling_times = 20
+        batch_size = x.shape[0]
+        x = torch.cat([x for _ in range(self.sampling_times)], 0)
         with torch.no_grad():
-            for _ in range(self.sampling_times):
-                tmp_x = torch.dropout(x, p=0.5, train=True)
-                pred_list.append(self.fc(tmp_x).argmax(1))
-        pred_labels = torch.cat([x[None] for x in pred_list], 0)
-        eq_gt_times = (pred_labels == gt_label[None]).sum(0).float()
-        return eq_gt_times / self.sampling_times
+            x = torch.dropout(x, p=0.5, train=True)
+            pred = self.fc(x).argmax(1)
+        pred_onehot = F.one_hot(pred, 10)
+        pred_onehot = pred_onehot.reshape(batch_size, self.sampling_times, -1)
+        pred_onehot = pred_onehot.sum(1).float() / self.sampling_times
+        return pred_onehot
 
-    def forward(self, x, test_mode=True, ood_test=False):
+    def forward(self, x, ood_test=False):
         out = self.conv1(x)
         out = self.block1(out)
         out = self.block2(out)
@@ -65,33 +66,21 @@ class WideResNetVariationCalibration(WideResNet):
         out = out.view(-1, self.channels)
         logits = self.fc(out)
 
-        if test_mode:
-            return logits
-        pseudo_labels = logits.max(1)[1].detach()
-        pseudo_labels_onehot = F.one_hot(pseudo_labels, self.num_classes)
-
-        cali_gt_label = self.calc_uncertainty(out, pseudo_labels)[..., None]
-        # TODO: change to out?
-        if self.version == 1:
-            encoder_x = torch.cat([logits.detach(), pseudo_labels_onehot, cali_gt_label], 1)
-        else:
-            encoder_x = torch.cat([logits, pseudo_labels_onehot, cali_gt_label], 1)
+        cali_gt_label = self.calc_uncertainty(out)
+        encoder_x = torch.cat([logits, out, cali_gt_label], 1)
         h = self.encoder(encoder_x)
         mu, logvar = h.chunk(2, dim=1)
         z = self.reparameterise(mu, logvar)
-        recon_r = self.decoder(torch.cat([logits, z], 1))
+        recon_r = self.decoder(torch.cat([logits, out, z], 1))
 
         with torch.no_grad():
             h = torch.randn(x.shape[0], self.z_dim * 2).to(x.device)
             sample_mu, sample_logvar = h.chunk(2, dim=1)
             z = self.reparameterise(sample_mu, sample_logvar)
-            decode_input = torch.cat([logits, z], 1)
+            decode_input = torch.cat([logits, out, z], 1)
             cali_output = self.decoder(decode_input)
-            batch_idx = torch.LongTensor(list(range(x.shape[0]))).to(x.device)
-            pseudo_labels_onehot = pseudo_labels_onehot.type_as(cali_output)
-            pseudo_labels_onehot[batch_idx, pseudo_labels[batch_idx]] = cali_output.squeeze()
 
-        return logits, recon_r, cali_gt_label, (mu, logvar), pseudo_labels_onehot
+        return logits, recon_r, cali_gt_label, (mu, logvar), cali_output
 
 
 class build_WideResNetVariationCalibration:
