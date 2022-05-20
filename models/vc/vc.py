@@ -12,7 +12,7 @@ from collections import Counter
 import os
 import contextlib
 
-from tqdm import tqdm
+import torch.nn as nn
 
 from helpers import expected_calibration_error, maximum_calibration_error, average_calibration_error
 from models.flexmatch.flexmatch import FlexMatch
@@ -25,18 +25,27 @@ from copy import deepcopy
 class VC(FlexMatch):
 
     def __init__(self,
+                 save_interval,
                  version,
                  pseudo_alg,
+                 uncertainty_alg,
                  pseudo_alg_warmup_iter,
                  cali_train_warmup_iter,
                  cali_loss_weight,
+                 cali_loss_type,
                  *args, **kwargs):
         super(VC, self).__init__(*args, **kwargs)
+        self.save_interval = save_interval
         self.version = version
         self.pseudo_alg_warmup_iter = pseudo_alg_warmup_iter
         self.cali_train_warmup_iter = cali_train_warmup_iter
         self.cali_loss_weight = cali_loss_weight
         self.pseudo_alg = pseudo_alg
+        self.uncertainty_alg = uncertainty_alg
+        self.cali_loss_type = cali_loss_type
+
+    def update_ulb_record(self, idx, pseudo_label):
+        pass
 
     def choose_pseudo_alg(self):
         if self.pseudo_alg_warmup_iter > 0:
@@ -82,6 +91,10 @@ class VC(FlexMatch):
 
         self.p_model = None
         self.p_target = p_target
+
+        self.selected_label = torch.ones((len(self.ulb_dset),), dtype=torch.long, ) * -1
+        self.selected_label = self.selected_label.cuda(args.gpu)
+        self.classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
 
     @torch.no_grad()
     def evaluate(self, eval_loader=None, args=None, is_pseudo_test=False):
@@ -158,10 +171,6 @@ class VC(FlexMatch):
         scaler = GradScaler()
         amp_cm = autocast if args.amp else contextlib.nullcontext
 
-        selected_label = torch.ones((len(self.ulb_dset),), dtype=torch.long, ) * -1
-        selected_label = selected_label.cuda(args.gpu)
-
-        classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
         for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s, _) in zip(
                 self.loader_dict['train_lb'], self.loader_dict['train_ulb']):
             # prevent the training iterations exceed args.num_train_iter
@@ -180,39 +189,45 @@ class VC(FlexMatch):
             x_ulb_idx = x_ulb_idx.cuda(args.gpu)
             y_lb = y_lb.cuda(args.gpu)
 
-            pseudo_counter = Counter(selected_label.tolist())
+            pseudo_counter = Counter(self.selected_label.tolist())
             if max(pseudo_counter.values()) < len(self.ulb_dset):  # not all(5w) -1
                 for i in range(args.num_classes):
-                    classwise_acc[i] = pseudo_counter[i] / max(pseudo_counter.values())
+                    self.classwise_acc[i] = pseudo_counter[i] / max(pseudo_counter.values())
 
             inputs = torch.cat((x_lb, x_ulb_w, x_ulb_s))
 
             # inference and calculate sup/unsup losses
             with amp_cm():
                 (logits, recon_r, uncertainty, (mu, logvar), cali_output
-                 ) = self.model(inputs, test_mode=False)
+                 ) = self.model(inputs)
                 logits_x_lb = logits[:num_lb]
                 logits_x_ulb_w, logits_x_ulb_s = logits[num_lb:].chunk(2)
-                _, recon_r_ulb_s = recon_r[num_lb:].chunk(2)
-                _, uncertainty_ulb_s = uncertainty[num_lb:].chunk(2)
-                _, mu_ulb_s = mu[num_lb:].chunk(2)
-                _, logvar_ulb_s = logvar[num_lb:].chunk(2)
-                cali_score_ulb_w, _ = cali_output[num_lb:].chunk(2)
+                recon_r_ulb_w, recon_r_ulb_s = recon_r[num_lb:].chunk(2)
+                uncertainty_ulb_w, uncertainty_ulb_s = uncertainty[num_lb:].chunk(2)
+                mu_ulb_w, mu_ulb_s = mu[num_lb:].chunk(2)
+                logvar_ulb_w, logvar_ulb_s = logvar[num_lb:].chunk(2)
+                cali_score_ulb_w, cali_score_ulb_s = cali_output[num_lb:].chunk(2)
                 sup_loss = ce_loss(logits_x_lb, y_lb, reduction='mean')
 
                 # hyper-params for update
                 T = self.t_fn(self.it)
                 p_cutoff = self.p_fn(self.it)
+
                 if self.cali_train_warmup_iter > 0:
                     cali_loss_weight = 0
                     self.cali_train_warmup_iter -= 1
                 else:
                     cali_loss_weight = self.cali_loss_weight
-                    
+
+                if self.pseudo_alg_warmup_iter == 0:
+                    preds_x_ulb_w = cali_score_ulb_w
+                else:
+                    preds_x_ulb_w = logits_x_ulb_w
+
                 unsup_loss, mask, select, pseudo_lb, self.p_model = self.choose_pseudo_alg()(
                     logits_x_ulb_s,
-                    logits_x_ulb_w,
-                    classwise_acc,
+                    preds_x_ulb_w,
+                    self.classwise_acc,
                     self.p_target,
                     self.p_model,
                     'ce', T, p_cutoff,
@@ -221,10 +236,14 @@ class VC(FlexMatch):
                 )
 
                 if x_ulb_idx[select == 1].nelement() != 0:
-                    selected_label[x_ulb_idx[select == 1]] = pseudo_lb[select == 1]
+                    self.selected_label[x_ulb_idx[select == 1]] = pseudo_lb[select == 1]
 
-                variation_loss = F.mse_loss(recon_r_ulb_s.softmax(1), uncertainty_ulb_s) * select
-                kl_loss = -0.5 * torch.sum(1 + logvar_ulb_s - mu_ulb_s ** 2 - logvar_ulb_s.exp(), dim=1) * select
+                if self.cali_loss_type == 'mse':
+                    variation_loss = F.mse_loss(recon_r_ulb_w.softmax(1), uncertainty_ulb_w) * mask
+                else:
+                    recon_r_ulb_w_log_softmax = torch.log_softmax(recon_r_ulb_w, -1)
+                    variation_loss = torch.mean(torch.sum(-uncertainty_ulb_w * recon_r_ulb_w_log_softmax, 1))
+                kl_loss = -0.5 * torch.sum(1 + logvar_ulb_w - mu_ulb_w ** 2 - logvar_ulb_w.exp(), dim=1) * mask
                 variation_loss = cali_loss_weight * variation_loss.mean()
                 kl_loss = cali_loss_weight * kl_loss.mean()
                 total_loss = sup_loss + self.lambda_u * unsup_loss + variation_loss + kl_loss
@@ -256,13 +275,13 @@ class VC(FlexMatch):
             tb_dict['train/recon_loss'] = variation_loss.detach()
             tb_dict['train/kl_loss'] = kl_loss.detach()
             tb_dict['train/total_loss'] = total_loss.detach()
-            tb_dict['train/mask_ratio'] = 1.0 - mask.detach()
+            tb_dict['train/mask_ratio'] = 1.0 - mask.mean().detach()
             tb_dict['lr'] = self.optimizer.param_groups[0]['lr']
             tb_dict['train/prefecth_time'] = start_batch.elapsed_time(end_batch) / 1000.
             tb_dict['train/run_time'] = start_run.elapsed_time(end_run) / 1000.
 
             # Save model for each 10K steps and best model for each 1K steps
-            if self.it % 25000 == 0:
+            if self.it % self.save_interval == 0:
                 save_path = os.path.join(args.save_dir, args.save_name)
                 if not args.multiprocessing_distributed or \
                         (args.multiprocessing_distributed and args.rank % ngpus_per_node == 0):
@@ -308,6 +327,31 @@ class VC(FlexMatch):
 
         return
 
+    def save_model(self, save_name, save_path):
+        save_filename = os.path.join(save_path, save_name)
+        # copy EMA parameters to ema_model for saving with model as temp
+        self.model.eval()
+        self.ema.apply_shadow()
+        ema_model = self.model.state_dict()
+        self.ema.restore()
+        self.model.train()
+
+        torch.save(
+            {
+                'model': self.model.state_dict(),
+                'optimizer': self.optimizer.state_dict(),
+                'scheduler': self.scheduler.state_dict(),
+                'it': self.it,
+                'ema_model': ema_model,
+                'scalar_dict': {
+                    'pseudo_alg_warmup_iter': self.pseudo_alg_warmup_iter,
+                    'cali_train_warmup_iter': self.cali_train_warmup_iter
+                }
+            },
+            save_filename)
+
+        self.print_fn(f"model saved: {save_filename}")
+
     def load_model(self, load_path):
         checkpoint = torch.load(load_path,
                                 map_location=lambda storage, loc: storage.cuda(current_device()))
@@ -319,11 +363,20 @@ class VC(FlexMatch):
             self.ema_model.load_state_dict(checkpoint['ema_model'])
             self.optimizer.load_state_dict(checkpoint['optimizer'])
         except Exception as e:
-            print(e)
+            self.print(e)
             self.model.load_state_dict(checkpoint['model'], strict=False)
             self.ema_model = deepcopy(self.model)
             self.ema_model.load_state_dict(checkpoint['ema_model'], strict=False)
-            print(f'Warning: Optimizer is not loaded due to {e}')
+            self.print(f'Warning: Optimizer is not loaded due to {e}')
+
+        try:
+            cali_train_warmup_iter = checkpoint['scalar_dict']['cali_train_warmup_iter']
+            pseudo_alg_warmup_iter = checkpoint['scalar_dict']['pseudo_alg_warmup_iter']
+            self.cali_train_warmup_iter = cali_train_warmup_iter
+            self.pseudo_alg_warmup_iter = pseudo_alg_warmup_iter
+        except Exception as e:
+            self.print_fn(e)
+            self.print_fn(f'Warning: Warmup iter is not loaded due to {e}')
 
 
 if __name__ == "__main__":

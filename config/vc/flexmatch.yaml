@@ -6,7 +6,7 @@ pseudo_alg: flexmatch
 pseudo_alg_warmup_iter: 100000000
 cali_train_warmup_iter: 150000000
 cali_loss_weight: 0.0
-overwrite: True
+overwrite: False
 use_tensorboard: True
 epoch: 100
 version: 0

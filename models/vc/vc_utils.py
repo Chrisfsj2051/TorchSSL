@@ -36,17 +36,14 @@ def consistency_loss(logits_s, logits_w, class_acc, p_target, p_model, name='ce'
             pseudo_label = (pseudo_label / pseudo_label.sum(dim=-1, keepdim=True))
 
         max_probs, max_idx = torch.max(pseudo_label, dim=-1)
-        # mask = max_probs.ge(p_cutoff * (class_acc[max_idx] + 1.) / 2).float()  # linear
-        # mask = max_probs.ge(p_cutoff * (1 / (2. - class_acc[max_idx]))).float()  # low_limit
         mask = max_probs.ge(p_cutoff * (class_acc[max_idx] / (2. - class_acc[max_idx]))).float()  # convex
-        # mask = max_probs.ge(p_cutoff * (torch.log(class_acc[max_idx] + 1.) + 0.5)/(math.log(2) + 0.5)).float()  # concave
         select = max_probs.ge(p_cutoff).long()
         if use_hard_labels:
             masked_loss = ce_loss(logits_s, max_idx, use_hard_labels, reduction='none') * mask
         else:
             pseudo_label = torch.softmax(logits_w / T, dim=-1)
             masked_loss = ce_loss(logits_s, pseudo_label, use_hard_labels) * mask
-        return masked_loss.mean(), mask.mean(), select, max_idx.long(), p_model
+        return masked_loss.mean(), mask, select, max_idx.long(), p_model
 
     else:
         assert Exception('Not Implemented consistency_loss')
@@ -68,4 +65,4 @@ def consistency_loss_prob(logits_s, logits_w, class_acc, p_target, p_model, name
     else:
         pseudo_label = torch.softmax(logits_w / T, dim=-1)
         masked_loss = ce_loss(logits_s, pseudo_label, use_hard_labels) * mask
-    return masked_loss.mean(), mask.mean(), select, max_idx.long(), p_model
+    return masked_loss.mean(), mask, select, max_idx.long(), p_model

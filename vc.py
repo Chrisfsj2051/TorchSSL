@@ -122,21 +122,25 @@ def main_worker(gpu, ngpus_per_node, args):
                                     'is_remix': False},
                                    )
 
-    model = VC(args.version,
-               args.pseudo_alg,
-               args.pseudo_alg_warmup_iter,
-               args.cali_train_warmup_iter,
-               args.cali_loss_weight,
-               _net_builder,
-               args.num_classes,
-               args.ema_m,
-               args.T,
-               args.p_cutoff,
-               args.ulb_loss_ratio,
-               args.hard_label,
-               num_eval_iter=args.num_eval_iter,
-               tb_log=tb_log,
-               logger=logger)
+    model = VC(
+        args.save_interval,
+        args.version,
+        args.pseudo_alg,
+        args.uncertainty_alg,
+        args.pseudo_alg_warmup_iter,
+        args.cali_train_warmup_iter,
+        args.cali_loss_weight,
+        args.cali_loss_type,
+        _net_builder,
+        args.num_classes,
+        args.ema_m,
+        args.T,
+        args.p_cutoff,
+        args.ulb_loss_ratio,
+        args.hard_label,
+        num_eval_iter=args.num_eval_iter,
+        tb_log=tb_log,
+        logger=logger)
 
     logger.info(f'Number of Trainable Params: {count_parameters(model.model)}')
 
@@ -307,11 +311,15 @@ if __name__ == "__main__":
     parser.add_argument('--p_cutoff', type=float, default=0.95)
     parser.add_argument('--ema_m', type=float, default=0.999, help='ema momentum for eval_model')
     parser.add_argument('--ulb_loss_ratio', type=float, default=1.0)
+
+    parser.add_argument('--save_interval', type=int, default=25000)
     parser.add_argument('--version', type=int, default=0)
     parser.add_argument('--pseudo_alg', type=str, default='flexmatch')
+    parser.add_argument('--uncertainty_alg', type=str, default='dropout')
     parser.add_argument('--pseudo_alg_warmup_iter', type=int, default=15000000000)
     parser.add_argument('--cali_train_warmup_iter', type=int, default=15000000000)
     parser.add_argument('--cali_loss_weight', type=float, default=0.0)
+    parser.add_argument('--cali_loss_type', type=str, default='ce')
 
     '''
     Optimizer configurations
