@@ -1,8 +1,8 @@
 save_dir: ./saved_models
-save_name: vc_flexmatch_ce
-resume: False
-load_path: None
-pseudo_alg: flexmatch
+save_name: vc_prob_ce
+resume: True
+load_path: saved_models/vc_flexmatch_ce/iter_20000.pth
+pseudo_alg: probabilitic
 uncertainty_alg: dropout
 pseudo_alg_warmup_iter: 25000
 cali_train_warmup_iter: 20000
