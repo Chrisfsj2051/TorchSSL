@@ -16,8 +16,7 @@ class WideResNetVariationCalibration(WideResNet):
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(128, self.num_classes),
-            nn.Sigmoid()
+            nn.Linear(128, self.num_classes)
         )
         # p(z|c,r)
         self.encoder = nn.Sequential(
@@ -47,12 +46,15 @@ class WideResNetVariationCalibration(WideResNet):
     def calc_uncertainty(self, x):
         self.sampling_times = 20
         batch_size = x.shape[0]
+        num_classes = self.num_classes
         x = torch.cat([x for _ in range(self.sampling_times)], 0)
         with torch.no_grad():
             x = torch.dropout(x, p=0.5, train=True)
             pred = self.fc(x).argmax(1)
-        pred_onehot = F.one_hot(pred, 10)
-        pred_onehot = pred_onehot.reshape(batch_size, self.sampling_times, -1)
+
+        pred_onehot = F.one_hot(pred, num_classes)
+        pred_onehot = pred_onehot.reshape(self.sampling_times, batch_size, num_classes)
+        pred_onehot = pred_onehot.permute(1, 0, 2)
         pred_onehot = pred_onehot.sum(1).float() / self.sampling_times
         return pred_onehot
 

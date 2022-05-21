@@ -242,7 +242,7 @@ class VC(FlexMatch):
                     variation_loss = F.mse_loss(recon_r_ulb_w.softmax(1), uncertainty_ulb_w) * mask
                 else:
                     recon_r_ulb_w_log_softmax = torch.log_softmax(recon_r_ulb_w, -1)
-                    variation_loss = torch.mean(torch.sum(-uncertainty_ulb_w * recon_r_ulb_w_log_softmax, 1))
+                    variation_loss = torch.mean(-uncertainty_ulb_w * recon_r_ulb_w_log_softmax, 1) * mask
                 kl_loss = -0.5 * torch.sum(1 + logvar_ulb_w - mu_ulb_w ** 2 - logvar_ulb_w.exp(), dim=1) * mask
                 variation_loss = cali_loss_weight * variation_loss.mean()
                 kl_loss = cali_loss_weight * kl_loss.mean()
