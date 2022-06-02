@@ -1,6 +1,6 @@
 from torchvision import transforms
 from torch.utils.data import Dataset
-from .data_utils import get_onehot
+from .data_utils import get_onehot, split_ssl_data
 from .augmentation.randaugment import RandAugment
 
 import torchvision
@@ -53,6 +53,33 @@ class BasicDataset(Dataset):
                 self.strong_transform.transforms.insert(0, RandAugment(3, 5))
         else:
             self.strong_transform = strong_transform
+
+    def get_holdout_dset(self, args, holdout_num):
+        assert holdout_num % self.num_classes == 0 and holdout_num < len(self.data)
+        if holdout_num == 0:
+            return self, None
+        img_shape = self.data.shape[1:]
+        data = self.data.reshape(self.num_classes, len(self.data) // self.num_classes, *img_shape)
+        holdout_data = data[:, :holdout_num // self.num_classes].reshape(-1, *img_shape)
+        lb_data = data[:, holdout_num // self.num_classes:].reshape(-1, *img_shape)
+        targets = self.targets.reshape(self.num_classes, len(self.data) // self.num_classes)
+        holdout_targets = targets[:, :holdout_num // self.num_classes].reshape(-1)
+        lb_targets = targets[:, holdout_num // self.num_classes:].reshape(-1)
+        lb_dset = BasicDataset(
+            self.alg, lb_data, lb_targets,
+            num_classes=self.num_classes,
+            transform=self.transform,
+            is_ulb=self.is_ulb,
+            strong_transform=self.strong_transform,
+            onehot=self.onehot)
+        holdout_dset = BasicDataset(
+            self.alg, holdout_data, holdout_targets,
+            num_classes=self.num_classes,
+            transform=self.transform,
+            is_ulb=self.is_ulb,
+            strong_transform=self.strong_transform,
+            onehot=self.onehot)
+        return lb_dset, holdout_dset
 
     def __getitem__(self, idx):
         """

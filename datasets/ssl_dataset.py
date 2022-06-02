@@ -1,4 +1,5 @@
 import torch
+from scipy.stats import wasserstein_distance
 
 from .data_utils import split_ssl_data, sample_labeled_data
 from .dataset import BasicDataset
@@ -21,7 +22,7 @@ import gc
 import sys
 import copy
 from PIL import Image
-
+wasserstein_distance
 mean, std = {}, {}
 mean['cifar10'] = [x / 255 for x in [125.3, 123.0, 113.9]]
 mean['cifar100'] = [x / 255 for x in [129.3, 124.1, 112.4]]

@@ -1,13 +1,13 @@
 save_dir: ./saved_models
-save_name: vc_prob_ce
+save_name: flexmatch_prob
 resume: True
-load_path: saved_models/vc_flexmatch_ce/iter_20000.pth
+load_path: saved_models/flexmatch/iter_25000.pth
 pseudo_alg: probabilitic
 uncertainty_alg: dropout
 pseudo_alg_warmup_iter: 25000
-cali_train_warmup_iter: 20000
-cali_loss_type: ce
-cali_loss_weight: 1.0
+cali_train_warmup_iter: 150000000
+cali_loss_type: mse
+cali_loss_weight: 0.0
 overwrite: False
 use_tensorboard: True
 epoch: 100
@@ -45,6 +45,6 @@ seed: 0
 world_size: 1
 rank: 0
 multiprocessing_distributed: False
-dist_url: tcp://127.0.0.1:10010
+dist_url: tcp://127.0.0.1:10009
 dist_backend: nccl
 gpu: 0

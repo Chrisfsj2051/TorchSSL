@@ -129,6 +129,7 @@ def main_worker(gpu, ngpus_per_node, args):
         args.uncertainty_alg,
         args.pseudo_alg_warmup_iter,
         args.cali_train_warmup_iter,
+        args.use_cali_out_warmup_iter,
         args.cali_loss_weight,
         args.cali_loss_type,
         _net_builder,
@@ -203,7 +204,7 @@ def main_worker(gpu, ngpus_per_node, args):
         train_dset = SSL_Dataset(args, alg='vc', name=args.dataset, train=True,
                                  num_classes=args.num_classes, data_dir=args.data_dir)
         lb_dset, ulb_dset = train_dset.get_ssl_dset(args.num_labels)
-
+        lb_dset, holdout_dset = lb_dset.get_holdout_dset(args, args.num_holdout)
         _eval_dset = SSL_Dataset(args, alg='vc', name=args.dataset, train=False,
                                  num_classes=args.num_classes, data_dir=args.data_dir)
         eval_dset = _eval_dset.get_dset()
@@ -217,7 +218,7 @@ def main_worker(gpu, ngpus_per_node, args):
         torch.distributed.barrier()
 
     loader_dict = {}
-    dset_dict = {'train_lb': lb_dset, 'train_ulb': ulb_dset, 'eval': eval_dset}
+    dset_dict = {'train_lb': lb_dset, 'train_ulb': ulb_dset, 'eval': eval_dset, 'holdout': holdout_dset}
 
     loader_dict['train_lb'] = get_data_loader(dset_dict['train_lb'],
                                               args.batch_size,
@@ -237,6 +238,14 @@ def main_worker(gpu, ngpus_per_node, args):
                                           args.eval_batch_size,
                                           num_workers=args.num_workers,
                                           drop_last=False)
+
+    if holdout_dset is not None:
+        loader_dict['holdout'] = get_data_loader(dset_dict['holdout'],
+                                                 args.eval_batch_size,
+                                                 num_workers=args.num_workers,
+                                                 drop_last=False)
+    else:
+        loader_dict['holdout'] = None
 
     loader_dict['eval_ulb'] = get_data_loader(deepcopy(dset_dict['train_ulb']),
                                               args.eval_batch_size,
@@ -318,8 +327,10 @@ if __name__ == "__main__":
     parser.add_argument('--uncertainty_alg', type=str, default='dropout')
     parser.add_argument('--pseudo_alg_warmup_iter', type=int, default=15000000000)
     parser.add_argument('--cali_train_warmup_iter', type=int, default=15000000000)
+    parser.add_argument('--use_cali_out_warmup_iter', type=int, default=15000000000)
     parser.add_argument('--cali_loss_weight', type=float, default=0.0)
     parser.add_argument('--cali_loss_type', type=str, default='ce')
+    parser.add_argument('--num_holdout', type=int, default=0)
 
     '''
     Optimizer configurations
