@@ -326,7 +326,7 @@ class SSL_Dataset:
             os.makedirs(output_file, exist_ok=True)
         with open(output_path, 'w') as w:
             json.dump(out, w)
-        # print(Counter(ulb_targets.tolist()))
+
         lb_dset = BasicDataset(self.alg, lb_data, lb_targets, self.num_classes,
                                self.transform, False, None, onehot)
 

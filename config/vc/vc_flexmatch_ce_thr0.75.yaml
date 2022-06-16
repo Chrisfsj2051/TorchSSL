@@ -1,7 +1,7 @@
 save_dir: ./saved_models
 save_name: vc_flexmatch_ce_thr0.75
-resume: True
-load_path: saved_models/flexmatch/iter_30000.pth
+resume: False
+load_path: None
 pseudo_alg: flexmatch
 uncertainty_alg: dropout
 pseudo_alg_warmup_iter: 0
@@ -10,14 +10,14 @@ use_cali_out_warmup_iter: 50000
 cali_loss_type: ce
 cali_loss_weight: 5.0
 overwrite: False
-num_holdout: 50
+num_holdout: 0
 use_tensorboard: True
 epoch: 100
 save_interval: 2500
 version: 0
 num_train_iter: 1024
 num_eval_iter: 2500
-num_labels: 300
+num_labels: 250
 batch_size: 64
 eval_batch_size: 1024
 hard_label: True
@@ -49,4 +49,4 @@ rank: 0
 multiprocessing_distributed: False
 dist_url: tcp://127.0.0.1:10010
 dist_backend: nccl
-gpu: 0
+gpu: 1

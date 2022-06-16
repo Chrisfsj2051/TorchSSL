@@ -37,6 +37,7 @@ class VC(FlexMatch):
                  use_cali_out_warmup_iter,
                  cali_loss_weight,
                  cali_loss_type,
+                 lb_strong_aug_warmup_iter,
                  *args, **kwargs):
         super(VC, self).__init__(*args, **kwargs)
         self.save_interval = save_interval
@@ -48,6 +49,7 @@ class VC(FlexMatch):
         self.uncertainty_alg = uncertainty_alg
         self.cali_loss_type = cali_loss_type
         self.use_cali_out_warmup_iter = use_cali_out_warmup_iter
+        self.lb_strong_aug_warmup_iter = lb_strong_aug_warmup_iter
 
 
     def choose_pseudo_alg(self):
@@ -119,10 +121,11 @@ class VC(FlexMatch):
         y_logits = []
         y_logits_vc = []
         for pair in eval_loader:
-            if not is_pseudo_test:
-                _, x, y = pair
-            else:
-                _, x, _, y = pair
+            # if not is_pseudo_test:
+            #     _, x, y = pair
+            # else:
+            #     _, x, _, y = pair
+            _, x, _, y = pair
             x, y = x.cuda(args.gpu), y.cuda(args.gpu)
             num_batch = x.shape[0]
             total_num += num_batch
@@ -197,7 +200,7 @@ class VC(FlexMatch):
         scaler = GradScaler()
         amp_cm = autocast if args.amp else contextlib.nullcontext
 
-        for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s, _) in zip(
+        for (_, x_lb, x_lb_s, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s, _) in zip(
                 self.loader_dict['train_lb'], self.loader_dict['train_ulb']):
             # prevent the training iterations exceed args.num_train_iter
             if self.it > args.num_train_iter * args.epoch:
@@ -206,6 +209,10 @@ class VC(FlexMatch):
             end_batch.record()
             torch.cuda.synchronize()
             start_run.record()
+
+            if self.it > self.lb_strong_aug_warmup_iter:
+                x_lb = torch.cat([x_lb, x_lb_s], 0)
+                y_lb = torch.cat([y_lb, y_lb], 0)
 
             num_lb = x_lb.shape[0]
             num_ulb = x_ulb_w.shape[0]

@@ -132,6 +132,7 @@ def main_worker(gpu, ngpus_per_node, args):
         args.use_cali_out_warmup_iter,
         args.cali_loss_weight,
         args.cali_loss_type,
+        args.lb_strong_aug_warmup_iter,
         _net_builder,
         args.num_classes,
         args.ema_m,
@@ -325,9 +326,10 @@ if __name__ == "__main__":
     parser.add_argument('--version', type=int, default=0)
     parser.add_argument('--pseudo_alg', type=str, default='flexmatch')
     parser.add_argument('--uncertainty_alg', type=str, default='dropout')
-    parser.add_argument('--pseudo_alg_warmup_iter', type=int, default=15000000000)
-    parser.add_argument('--cali_train_warmup_iter', type=int, default=15000000000)
-    parser.add_argument('--use_cali_out_warmup_iter', type=int, default=15000000000)
+    parser.add_argument('--pseudo_alg_warmup_iter', type=int, default=1500000000000000)
+    parser.add_argument('--cali_train_warmup_iter', type=int, default=1500000000000000)
+    parser.add_argument('--use_cali_out_warmup_iter', type=int, default=1500000000000000)
+    parser.add_argument('--lb_strong_aug_warmup_iter', type=int, default=1500000000000000)
     parser.add_argument('--cali_loss_weight', type=float, default=0.0)
     parser.add_argument('--cali_loss_type', type=str, default='ce')
     parser.add_argument('--num_holdout', type=int, default=0)

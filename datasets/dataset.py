@@ -47,12 +47,17 @@ class BasicDataset(Dataset):
         self.onehot = onehot
 
         self.transform = transform
+        self.strong_transform = copy.deepcopy(transform)
         if self.is_ulb:
-            if strong_transform is None:
-                self.strong_transform = copy.deepcopy(transform)
-                self.strong_transform.transforms.insert(0, RandAugment(3, 5))
+            self.strong_transform.transforms.insert(0, RandAugment(3, 5))
         else:
-            self.strong_transform = strong_transform
+            self.strong_transform.transforms.insert(0, RandAugment(2, 5))
+        # if self.is_ulb:
+        #     if strong_transform is None:
+        #         self.strong_transform = copy.deepcopy(transform)
+        #         self.strong_transform.transforms.insert(0, RandAugment(3, 5))
+        # else:
+        #     self.strong_transform = strong_transform
 
     def get_holdout_dset(self, args, holdout_num):
         assert holdout_num % self.num_classes == 0 and holdout_num < len(self.data)
@@ -106,7 +111,10 @@ class BasicDataset(Dataset):
                 img = Image.fromarray(img)
             img_w = self.transform(img)
             if not self.is_ulb:
-                return idx, img_w, target
+                if self.alg == 'vc':
+                    return idx, img_w, self.strong_transform(img), target
+                else:
+                    return idx, img_w, target
             else:
                 if self.alg == 'fixmatch':
                     return idx, img_w, self.strong_transform(img)
