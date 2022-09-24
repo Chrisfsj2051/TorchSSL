@@ -14,10 +14,8 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 
-
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import confusion_matrix
-
 
 # Some keys used for the following dictionaries
 COUNT = 'count'
@@ -51,7 +49,7 @@ def _populate_bins(confs, preds, labels, num_bins=10):
         bin_dict[binn][COUNT] = bin_dict[binn][COUNT] + 1
         bin_dict[binn][CONF] = bin_dict[binn][CONF] + confidence
         bin_dict[binn][ACC] = bin_dict[binn][ACC] + \
-            (1 if (label == prediction) else 0)
+                              (1 if (label == prediction) else 0)
 
     for binn in range(0, num_bins):
         if (bin_dict[binn][COUNT] == 0):
@@ -61,7 +59,7 @@ def _populate_bins(confs, preds, labels, num_bins=10):
             bin_dict[binn][BIN_ACC] = float(
                 bin_dict[binn][ACC]) / bin_dict[binn][COUNT]
             bin_dict[binn][BIN_CONF] = bin_dict[binn][CONF] / \
-                float(bin_dict[binn][COUNT])
+                                       float(bin_dict[binn][COUNT])
     return bin_dict
 
 
@@ -74,7 +72,16 @@ def expected_calibration_error(confs, preds, labels, num_bins=10):
         bin_confidence = bin_dict[i][BIN_CONF]
         bin_count = bin_dict[i][COUNT]
         ece += (float(bin_count) / num_samples) * \
-            abs(bin_accuracy - bin_confidence)
+               abs(bin_accuracy - bin_confidence)
+    import matplotlib.pyplot as plt
+    bin_x = [f'0.{x}' for x in range(10)]
+    bin_y = [bin_dict[i][BIN_ACC] for i in range(10)]
+    plt.bar(bin_x, bin_y, width=0.8)
+    plt.xlabel('Confidence')
+    plt.ylabel('Accuracy')
+    plt.title(f'ECE={ece:.4f}')
+    plt.show()
+    print('helpers/calibration_metrics.py')
     return ece
 
 
@@ -111,7 +118,7 @@ def l2_error(confs, preds, labels, num_bins=15):
         bin_confidence = bin_dict[i][BIN_CONF]
         bin_count = bin_dict[i][COUNT]
         l2_sum += (float(bin_count) / num_samples) * \
-               (bin_accuracy - bin_confidence)**2
+                  (bin_accuracy - bin_confidence) ** 2
         l2_error = math.sqrt(l2_sum)
     return l2_error
 
@@ -131,8 +138,8 @@ def test_classification_net_logits(logits, labels):
     predictions_list.extend(predictions.cpu().numpy().tolist())
     confidence_vals_list.extend(confidence_vals.cpu().numpy().tolist())
     accuracy = accuracy_score(labels_list, predictions_list)
-    return confusion_matrix(labels_list, predictions_list), accuracy, labels_list,\
-        predictions_list, confidence_vals_list
+    return confusion_matrix(labels_list, predictions_list), accuracy, labels_list, \
+           predictions_list, confidence_vals_list
 
 
 def get_logits_labels(data_loader, net):
@@ -176,11 +183,11 @@ def test_classification_net(model, data_loader, device, return_ece=False):
         ece_criterion = ECELoss().cuda()
         logits, labels = get_logits_labels(data_loader, model)
         ece = ece_criterion(logits, labels).item()
-        return confusion_matrix(labels_list, predictions_list), accuracy, labels_list,\
-            predictions_list, confidence_vals_list, ece
+        return confusion_matrix(labels_list, predictions_list), accuracy, labels_list, \
+               predictions_list, confidence_vals_list, ece
     else:
-        return confusion_matrix(labels_list, predictions_list), accuracy, labels_list,\
-            predictions_list, confidence_vals_list
+        return confusion_matrix(labels_list, predictions_list), accuracy, labels_list, \
+               predictions_list, confidence_vals_list
 
 
 # Calibration error scores in the form of loss metrics
@@ -188,6 +195,7 @@ class ECELoss(nn.Module):
     '''
     Compute ECE (Expected Calibration Error)
     '''
+
     def __init__(self, n_bins=15):
         super(ECELoss, self).__init__()
         bin_boundaries = torch.linspace(0, 1, n_bins + 1)
@@ -216,6 +224,7 @@ class AdaptiveECELoss(nn.Module):
     '''
     Compute Adaptive ECE
     '''
+
     def __init__(self, n_bins=15):
         super(AdaptiveECELoss, self).__init__()
         self.nbins = n_bins
@@ -223,14 +232,15 @@ class AdaptiveECELoss(nn.Module):
     def histedges_equalN(self, x):
         npt = len(x)
         return np.interp(np.linspace(0, npt, self.nbins + 1),
-                     np.arange(npt),
-                     np.sort(x))
+                         np.arange(npt),
+                         np.sort(x))
+
     def forward(self, logits, labels):
         softmaxes = F.softmax(logits, dim=1)
         confidences, predictions = torch.max(softmaxes, 1)
         accuracies = predictions.eq(labels)
         n, bin_boundaries = np.histogram(confidences.cpu().detach(), self.histedges_equalN(confidences.cpu().detach()))
-        #print(n,confidences,bin_boundaries)
+        # print(n,confidences,bin_boundaries)
         self.bin_lowers = bin_boundaries[:-1]
         self.bin_uppers = bin_boundaries[1:]
         ece = torch.zeros(1, device=logits.device)
@@ -249,6 +259,7 @@ class ClasswiseECELoss(nn.Module):
     '''
     Compute Classwise ECE
     '''
+
     def __init__(self, n_bins=15):
         super(ClasswiseECELoss, self).__init__()
         bin_boundaries = torch.linspace(0, 1, n_bins + 1)
@@ -263,7 +274,7 @@ class ClasswiseECELoss(nn.Module):
         for i in range(num_classes):
             class_confidences = softmaxes[:, i]
             class_sce = torch.zeros(1, device=logits.device)
-            labels_in_class = labels.eq(i) # one-hot vector of all positions where the label belongs to the class i
+            labels_in_class = labels.eq(i)  # one-hot vector of all positions where the label belongs to the class i
 
             for bin_lower, bin_upper in zip(self.bin_lowers, self.bin_uppers):
                 in_bin = class_confidences.gt(bin_lower.item()) * class_confidences.le(bin_upper.item())

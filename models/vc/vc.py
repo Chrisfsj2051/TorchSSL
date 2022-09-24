@@ -69,43 +69,19 @@ class VC(FlexMatch):
         self.ema.register()
         if args.resume == True:
             self.ema.load(self.ema_model)
-
         self.best_eval_acc, self.best_it = 0.0, 0
-        # eval for once to verify if the checkpoint is loaded correctly
         if args.resume == True:
             eval_dict, _ = self.evaluate(args=args)
             self.print_fn(
                 f"{self.it} iteration, USE_EMA: {self.ema_m != 0}, "
                 f"{eval_dict}, at {self.best_it} iters")
-            # ulb_eval_dict, cls_report = self.evaluate(
-            #     eval_loader=self.loader_dict['eval_ulb'], args=args, is_pseudo_test=True)
-            # self.print_fn(
-            #     f"[ULB EVAL] {self.it} iteration, USE_EMA: {self.ema_m != 0}, "
-            #     f"{ulb_eval_dict}, at {self.best_it} iters")
-            # self.print_fn(f"[ULB EVAL]:\n{cls_report}")
-
-        # dist_file_name = r"./data_statistics/" + args.dataset + '_' + str(args.num_labels) + '.json'
-        # if args.dataset.upper() == 'IMAGENET':
-        #     p_target = None
-        # else:
-        #     with open(dist_file_name, 'r') as f:
-        #         p_target = json.loads(f.read())
-        #         p_target = torch.tensor(p_target['distribution'])
-        #         p_target = p_target.cuda(args.gpu)
-        #
-        # self.p_model = None
-        # self.p_target = p_target
-
         self.p_model = None
         self.p_target = None
-
         if not hasattr(self, 'selected_label'):
             self.selected_label = torch.ones((len(self.ulb_dset),), dtype=torch.long, ) * -1
             self.classwise_acc = torch.zeros((args.num_classes,))
-
         self.selected_label = self.selected_label.cuda(args.gpu)
         self.classwise_acc = self.classwise_acc.cuda(args.gpu)
-        # assert not args.use_DA, 'p_model load is not implmented'
 
     @torch.no_grad()
     def evaluate(self, eval_loader=None, args=None, is_pseudo_test=False):
@@ -121,10 +97,6 @@ class VC(FlexMatch):
         y_logits = []
         y_logits_vc = []
         for pair in eval_loader:
-            # if not is_pseudo_test:
-            #     _, x, y = pair
-            # else:
-            #     _, x, _, y = pair
             _, x, _, y = pair
             x, y = x.cuda(args.gpu), y.cuda(args.gpu)
             num_batch = x.shape[0]
@@ -185,11 +157,7 @@ class VC(FlexMatch):
 
     def train(self, args, logger=None):
         ngpus_per_node = torch.cuda.device_count()
-
-        # EMA Init
         self.model.train()
-
-        # for gpu profiling
         start_batch = torch.cuda.Event(enable_timing=True)
         end_batch = torch.cuda.Event(enable_timing=True)
         start_run = torch.cuda.Event(enable_timing=True)
@@ -202,7 +170,7 @@ class VC(FlexMatch):
 
         for (_, x_lb, x_lb_s, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s, _) in zip(
                 self.loader_dict['train_lb'], self.loader_dict['train_ulb']):
-            # prevent the training iterations exceed args.num_train_iter
+
             if self.it > args.num_train_iter * args.epoch:
                 break
 
@@ -231,16 +199,6 @@ class VC(FlexMatch):
 
             # inference and calculate sup/unsup losses
             with amp_cm():
-                # min_val, max_val = 1.0, 0.0
-                # for _ in range(100):
-                #     with torch.no_grad():
-                #         (logits, recon_r, uncertainty, (mu, logvar), cali_output
-                #          ) = self.model(inputs)
-                #         idx = 203
-                #         res = cali_output[idx].softmax(-1).cpu().max().item()
-                #         min_val = min(res, min_val)
-                #         max_val = max(res, max_val)
-                # print(min_val, max_val)
                 (logits, recon_r, uncertainty, (mu, logvar), cali_output
                  ) = self.model(inputs)
 
@@ -294,16 +252,6 @@ class VC(FlexMatch):
                 else:
                     recon_r_ulb_w_log_softmax = torch.log_softmax(recon_r_ulb_w, -1)
                     variation_loss = torch.mean(-uncertainty_ulb_w * recon_r_ulb_w_log_softmax, 1) * mask
-                    # print(f'it: {self.it}, var_loss={variation_loss.mean().detach().item(): .3f}, '
-                    #       f'pred>0.90_ratio={(logits_x_ulb_w.softmax(1)>0.90).float().mean().detach().item(): .3f}, '
-                    #       f'recon_pred>0.90_ratio={(recon_r_ulb_w.softmax(1) > 0.90).float().mean().detach().item(): .3f}, ',
-                    #       f'recon_pred_max_score={recon_r_ulb_w.softmax(1).max().detach().item(): .3f}, '
-                    #       f'recon_pred_max_mean_score={recon_r_ulb_w.softmax(1).max(1)[0].mean().detach().item(): .3f}, '
-                    #       f'pred_max_mean_score={logits_x_ulb_w.softmax(1).max(1)[0].mean().detach().item(): .3f}, '
-                    #       f'recon_target_score_max={uncertainty_ulb_w.max().detach().item(): .3f}, '
-                    #       f'recon_target_score_mean={uncertainty_ulb_w.max(1)[0].mean(): .3f}, '
-                    #       f'cali_loss_weight={cali_loss_weight: .2f}, '
-                    #       f'mask_mean={mask.mean().detach().item(): .2f}')
                 kl_loss = -0.5 * torch.sum(1 + logvar_ulb_w - mu_ulb_w ** 2 - logvar_ulb_w.exp(), dim=1) * mask
                 variation_loss = cali_loss_weight * variation_loss.mean()
                 kl_loss = cali_loss_weight * kl_loss.mean()
