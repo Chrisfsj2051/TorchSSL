@@ -76,13 +76,6 @@ def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
     args.gpu = gpu
 
-    # random seed has to be set for the syncronization of labeled data sampling in each process.
-    assert args.seed is not None
-    random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
-    cudnn.deterministic = True
-
     # SET UP FOR DISTRIBUTED TRAINING
     if args.distributed:
         if args.dist_url == "env://" and args.rank == -1:
@@ -204,11 +197,11 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.dataset != "imagenet":
         train_dset = SSL_Dataset(args, alg='vc', name=args.dataset, train=True,
                                  num_classes=args.num_classes, data_dir=args.data_dir)
-        lb_dset, ulb_dset = train_dset.get_ssl_dset(args.num_labels)
+        lb_dset, ulb_dset = train_dset.get_ssl_dset(args.num_labels, args)
         lb_dset, holdout_dset = lb_dset.get_holdout_dset(args, args.num_holdout)
         _eval_dset = SSL_Dataset(args, alg='vc', name=args.dataset, train=False,
                                  num_classes=args.num_classes, data_dir=args.data_dir)
-        eval_dset = _eval_dset.get_dset()
+        eval_dset = _eval_dset.get_dset(args)
     else:
         image_loader = ImageNetLoader(root_path=args.data_dir, num_labels=args.num_labels,
                                       num_class=args.num_classes)
@@ -362,6 +355,7 @@ if __name__ == "__main__":
     parser.add_argument('--train_sampler', type=str, default='RandomSampler')
     parser.add_argument('-nc', '--num_classes', type=int, default=10)
     parser.add_argument('--num_workers', type=int, default=1)
+    parser.add_argument('--mismatch_ratio', type=float, default=0.0)
 
     '''
     multi-GPUs & Distrbitued Training

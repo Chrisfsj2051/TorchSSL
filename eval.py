@@ -51,7 +51,7 @@ if __name__ == "__main__":
     net.eval()
     
     _eval_dset = SSL_Dataset(name=args.dataset, train=False, data_dir=args.data_dir)
-    eval_dset = _eval_dset.get_dset()
+    eval_dset = _eval_dset.get_dset(args)
     
     eval_loader = get_data_loader(eval_dset,
                                   args.batch_size, 

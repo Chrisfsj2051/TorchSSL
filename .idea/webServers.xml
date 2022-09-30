@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="3d90de4d-c42b-4ff0-b104-cf6e24c034b3" name="autodl2">
+        <fileTransfer accessType="SFTP" host="region-41.autodl.com" port="12953" sshConfigId="758d2c46-b01c-496d-9032-9366ccff6bc7" sshConfig="root@region-41.autodl.com:12953 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+      <webServer id="990dacd5-b5c3-4b10-a942-5d18c34bf83c" name="autodl">
+        <fileTransfer accessType="SFTP" host="region-41.autodl.com" port="26273" sshConfigId="058c9091-26fe-4c9d-b7a2-d3edba0d1b0c" sshConfig="root@region-41.autodl.com:26273 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+      <webServer id="2cbaf349-f2b4-414f-be6e-ee00c6b5b820" name="autodl3">
+        <fileTransfer accessType="SFTP" host="region-11.autodl.com" port="23828" sshConfigId="88fb154f-c956-41fb-907f-463f1e4ef32a" sshConfig="root@region-11.autodl.com:23828 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+    <groups>
+      <group>
+        <name>autodl_all</name>
+        <servers>
+          <name value="autodl2" />
+          <name value="autodl" />
+          <name value="autodl3" />
+        </servers>
+      </group>
+    </groups>
+  </component>
+</project>

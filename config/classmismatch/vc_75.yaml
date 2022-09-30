@@ -1,9 +1,10 @@
 save_dir: ./saved_models
-save_name: vc_fixmatch_ce_drawpic
-resume: True
-load_path: saved_models/vc_flexmatch_ce_thr0.75/iter_90000.pth
-#load_path: saved_models/pretrained_fixmatch_1gpu/fixmatch_cifar10_40_0/latest_model.pth
-pseudo_alg: fixmatch
+save_name: classmismatch_vc_75
+resume: False
+mismatch_ratio: 0.75
+num_labels: 40
+load_path: /home/nirvana/workspace/PycharmProjects/TorchSSL/saved_models/classmismatch_vc/iter_20000.pth
+pseudo_alg: flexmatch
 uncertainty_alg: dropout
 pseudo_alg_warmup_iter: 0
 cali_train_warmup_iter: 30000
@@ -17,13 +18,12 @@ epoch: 100
 save_interval: 2500
 version: 0
 num_train_iter: 1024
-num_eval_iter: 2500
-num_labels: 250
+num_eval_iter: 1000
 batch_size: 64
 eval_batch_size: 1024
 hard_label: True
 T: 0.5
-p_cutoff: 0.95
+p_cutoff: 0.75
 ulb_loss_ratio: 1.0
 uratio: 7
 ema_m: 0.999
@@ -41,7 +41,7 @@ dropout: 0.0
 data_dir: ./data/cifar10
 dataset: cifar10
 train_sampler: RandomSampler
-num_classes: 10
+num_classes: 4
 num_workers: 1
 alg: fixmatch
 seed: 0
@@ -50,4 +50,4 @@ rank: 0
 multiprocessing_distributed: False
 dist_url: tcp://127.0.0.1:10010
 dist_backend: nccl
-gpu: 0
+gpu: 1

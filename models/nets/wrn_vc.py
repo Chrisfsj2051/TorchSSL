@@ -82,6 +82,26 @@ class WideResNetVariationCalibration(WideResNet):
             decode_input = torch.cat([logits, out, z], 1)
             cali_output = self.decoder(decode_input)
 
+        cali_output_list = []
+        idx = 1
+        data_mean = x.new_tensor([x / 255 for x in [125.3, 123.0, 113.9]])[..., None, None]
+        data_std = x.new_tensor([x / 255 for x in [63.0, 62.1, 66.7]])[..., None, None]
+        tmp = x[idx] * data_std + data_mean
+        tmp = np.array(tmp.cpu().permute(1, 2, 0))
+        import matplotlib.pyplot as plt
+        plt.imshow(tmp)
+        plt.show()
+        for _ in range(20):
+            with torch.no_grad():
+                z = self.reparameterise(sample_mu, sample_logvar)
+                z = torch.ones_like(z)
+                decode_input = torch.cat([logits, out, z], 1)
+                decode_input = decode_input[idx: idx+1]
+                cali_output = self.decoder(decode_input)
+                cali_output_list.append(cali_output[idx])
+
+        print('in')
+
         return logits, recon_r, cali_gt_label, (mu, logvar), cali_output
 
 

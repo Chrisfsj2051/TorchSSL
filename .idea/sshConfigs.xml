@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SshConfigs">
+    <configs>
+      <sshConfig authType="PASSWORD" host="region-41.autodl.com" id="058c9091-26fe-4c9d-b7a2-d3edba0d1b0c" port="26273" nameFormat="DESCRIPTIVE" username="root" useOpenSSHConfig="true" />
+      <sshConfig authType="PASSWORD" host="region-41.autodl.com" id="758d2c46-b01c-496d-9032-9366ccff6bc7" port="12953" nameFormat="DESCRIPTIVE" username="root" useOpenSSHConfig="true" />
+      <sshConfig authType="PASSWORD" host="region-11.autodl.com" id="88fb154f-c956-41fb-907f-463f1e4ef32a" port="23828" nameFormat="DESCRIPTIVE" username="root" useOpenSSHConfig="true" />
+    </configs>
+  </component>
+</project>

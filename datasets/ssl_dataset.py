@@ -220,7 +220,7 @@ class SSL_Dataset:
         crop_size = 96 if self.name.upper() == 'STL10' else 224 if self.name.upper() == 'IMAGENET' else 32
         self.transform = get_transform(mean[name], std[name], crop_size, train)
 
-    def get_data(self, svhn_extra=True):
+    def get_data(self, args, svhn_extra=True):
         """
         get_data returns data (images) and targets (labels)
         shape of data: B, H, W, C
@@ -230,6 +230,39 @@ class SSL_Dataset:
         if 'CIFAR' in self.name.upper():
             dset = dset(self.data_dir, train=self.train, download=True)
             data, targets = dset.data, dset.targets
+            # targets = np.array(targets)
+            # mask = targets < 4
+            # if self.train:
+            #     clean_data = data[mask]
+            #     clean_targets = targets[mask]
+            #     dirty_data = data[~mask]
+            #     dirty_targets = targets[~mask]
+            #     num_added = args.mismatch_ratio * len(clean_data) / (1 - args.mismatch_ratio)
+            #     num_added = int(num_added)
+            #     num_remove = len(clean_data) - num_added
+            #     def shuffle_data(dirty_data, dirty_targets):
+            #         dirty_all = [(dirty_data[i], dirty_targets[i]) for i in range(dirty_data.shape[0])]
+            #         random.shuffle(dirty_all)
+            #         data = np.concatenate([dirty_all[i][0][None] for i in range(len(dirty_all))])
+            #         targets = np.concatenate([dirty_all[i][1][None] for i in range(len(dirty_all))])
+            #         return data, targets
+            #
+            #     if args.mismatch_ratio:
+            #         clean_data, clean_targets = shuffle_data(clean_data, clean_targets)
+            #         clean_data = clean_data[num_remove:]
+            #         clean_targets = clean_targets[num_remove:]
+            #         dirty_data, dirty_targets = shuffle_data(dirty_data, dirty_targets)
+            #         dirty_data = dirty_data[:num_added]
+            #         dirty_targets = dirty_targets[:num_added]
+            #         data = np.concatenate([clean_data, dirty_data], 0)
+            #         targets = np.concatenate([clean_targets, dirty_targets], 0)
+            #     else:
+            #         data = clean_data
+            #         targets = clean_targets
+            # else:
+            #     data = data[mask]
+            #     targets = targets[mask]
+            # targets = list(targets)
             return data, targets
         elif self.name.upper() == 'SVHN':
             if self.train:
@@ -257,7 +290,7 @@ class SSL_Dataset:
             ulb_data = dset_ulb.data.transpose([0, 2, 3, 1])
             return data, targets, ulb_data
 
-    def get_dset(self, is_ulb=False,
+    def get_dset(self, args, is_ulb=False,
                  strong_transform=None, onehot=False):
         """
         get_dset returns class BasicDataset, containing the returns of get_data.
@@ -271,14 +304,14 @@ class SSL_Dataset:
         if self.name.upper() == 'STL10':
             data, targets, _ = self.get_data()
         else:
-            data, targets = self.get_data()
+            data, targets = self.get_data(args)
         num_classes = self.num_classes
         transform = self.transform
 
         return BasicDataset(self.alg, data, targets, num_classes, transform,
                             is_ulb, strong_transform, onehot)
 
-    def get_ssl_dset(self, num_labels, index=None, include_lb_to_ulb=True,
+    def get_ssl_dset(self, num_labels, args, index=None, include_lb_to_ulb=True,
                      strong_transform=None, onehot=False):
         """
         get_ssl_dset split training samples into labeled and unlabeled samples.
@@ -308,7 +341,7 @@ class SSL_Dataset:
             lb_data, lb_targets, _ = sample_labeled_data(self.args, lb_data, lb_targets, num_labels, self.num_classes)
             ulb_targets = None
         else:
-            data, targets = self.get_data()
+            data, targets = self.get_data(args)
             lb_data, lb_targets, ulb_data, ulb_targets = split_ssl_data(self.args, data, targets,
                                                                         num_labels, self.num_classes,
                                                                         index, include_lb_to_ulb)

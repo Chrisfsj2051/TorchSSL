@@ -2,7 +2,6 @@ import json
 
 from torch.utils.data import DataLoader
 
-DataLoader
 import numpy as np
 import torch
 
@@ -102,6 +101,8 @@ class VC(FlexMatch):
             num_batch = x.shape[0]
             total_num += num_batch
             logits, _, _, _, logits_vc = self.model(x)
+            # import pdb;
+            # pdb.set_trace()
             loss = F.cross_entropy(logits, y, reduction='mean')
             y_true.extend(y.cpu().tolist())
             y_pred.extend(torch.max(logits, dim=-1)[1].cpu().tolist())
@@ -301,12 +302,13 @@ class VC(FlexMatch):
                     self.save_model(f'iter_{self.it}.pth', save_path)
 
             if self.it % (self.num_eval_iter * 2) == 0:
-                ulb_eval_dict, cls_report = self.evaluate(
-                    eval_loader=self.loader_dict['eval_ulb'], args=args, is_pseudo_test=True)
-                self.print_fn(
-                    f"[ULB EVAL] {self.it} iteration, USE_EMA: {self.ema_m != 0}, "
-                    f"{ulb_eval_dict}, at {self.best_it} iters")
-                self.print_fn(f"[ULB EVAL]:\n{cls_report}")
+                pass
+                # ulb_eval_dict, cls_report = self.evaluate(
+                #     eval_loader=self.loader_dict['eval_ulb'], args=args, is_pseudo_test=True)
+                # self.print_fn(
+                #     f"[ULB EVAL] {self.it} iteration, USE_EMA: {self.ema_m != 0}, "
+                #     f"{ulb_eval_dict}, at {self.best_it} iters")
+                # self.print_fn(f"[ULB EVAL]:\n{cls_report}")
 
             if self.it % self.num_eval_iter == 0:
                 eval_dict, _ = self.evaluate(args=args)

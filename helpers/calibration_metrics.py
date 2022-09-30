@@ -73,15 +73,15 @@ def expected_calibration_error(confs, preds, labels, num_bins=10):
         bin_count = bin_dict[i][COUNT]
         ece += (float(bin_count) / num_samples) * \
                abs(bin_accuracy - bin_confidence)
-    import matplotlib.pyplot as plt
-    bin_x = [f'0.{x}' for x in range(10)]
-    bin_y = [bin_dict[i][BIN_ACC] for i in range(10)]
-    plt.bar(bin_x, bin_y, width=0.8)
-    plt.xlabel('Confidence')
-    plt.ylabel('Accuracy')
-    plt.title(f'ECE={ece:.4f}')
-    plt.show()
-    print('helpers/calibration_metrics.py')
+    # import matplotlib.pyplot as plt
+    # bin_x = [f'0.{x}' for x in range(10)]
+    # bin_y = [bin_dict[i][BIN_ACC] for i in range(10)]
+    # plt.bar(bin_x, bin_y, width=0.8)
+    # plt.xlabel('Confidence')
+    # plt.ylabel('Accuracy')
+    # plt.title(f'ECE={ece:.4f}')
+    # plt.show()
+    # print('helpers/calibration_metrics.py')
     return ece
 
 
